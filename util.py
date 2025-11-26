@@ -27,55 +27,13 @@ from adafruit_24lc32 import EEPROM_I2C
 from adafruit_datetime import datetime
 from adafruit_ds3231 import DS3231
 
+from eeprom_db import check_eeprom_format, is_slot_in_use, load_totp_account
 from sb_totp import base32_decode, parse_uri
 
 
 i2c = busio.I2C(board.SCL, board.SDA, frequency=250_000)
 rtc = DS3231(i2c)
 eeprom = EEPROM_I2C(i2c)
-
-
-def validate_slot(slot):
-    # Validates if the slot number is between 1 and 15
-    if not (1 <= slot <= 15):
-        raise ValueError("Invalid slot number. Must be between 1 and 15.")
-
-
-def is_slot_in_use(slot):
-    # Checks if the slot is in use by checking the in-use marker
-    in_use_marker = 4 + (slot - 1)
-    return eeprom[in_use_marker] == b'\xFF'
-
-
-def write_slot_data(slot, label_padded, secret_bytes):
-    # Writes label and secret data to the specified slot
-    base = 32 + (slot - 1) * 64
-    eeprom[base+0:base+8] = label_padded      # 8 null padded label bytes
-    eeprom[base+8:base+32] = b'\x00' * 24     # 24 reserved bytes
-    eeprom[base+32:base+64] = secret_bytes    # 32 null padded secret bytes
-
-
-def confirm_overwrite(slot):
-    # Prompts the user to confirm overwriting a slot if it is in use
-    if is_slot_in_use(slot):  # Slot is in use
-        overwrite = input("Slot is in use. Overwrite? (y/n): ").strip().lower()
-        if overwrite != 'y':
-            print("Operation canceled.")
-            return False
-    return True
-
-
-def check_eeprom_format():
-    # Checks if the EEPROM is formatted with 'TOTP' magic bytes
-    if eeprom[0:4] != b'TOTP':
-        raise ValueError("EEPROM not formatted. Run format_eeprom() first.")
-
-
-def get_slot_input():
-    # Prompts the user for a valid slot number
-    slot = int(input("Enter slot number (1-15): "))
-    validate_slot(slot)
-    return slot
 
 
 def set_time():
@@ -101,6 +59,24 @@ def now():
 
 def get_time():
     print(now())
+
+
+def get_slot_input():
+    # Prompts the user for a valid slot number
+    slot = int(input("Enter slot number (1-15): "))
+    if not (1 <= slot <= 15):
+        raise ValueError("Invalid slot number. Must be between 1 and 15.")
+    return slot
+
+
+def confirm_overwrite(slot):
+    # Prompts the user to confirm overwriting a slot if it is in use
+    if is_slot_in_use(eeprom, slot):  # Slot is in use
+        overwrite = input("Slot is in use. Overwrite? (y/n): ").strip().lower()
+        if overwrite != 'y':
+            print("Operation canceled.")
+            return False
+    return True
 
 
 def format_eeprom():
@@ -129,15 +105,23 @@ def format_eeprom():
     print("\nEEPROM formatted successfully.")
 
 
+def write_slot_data(slot, label_padded, secret_bytes):
+    # Writes label and secret data to the specified slot
+    base = 32 + (slot - 1) * 64
+    eeprom[base+0:base+8] = label_padded      # 8 null padded label bytes
+    eeprom[base+8:base+32] = b'\x00' * 24     # 24 reserved bytes
+    eeprom[base+32:base+64] = secret_bytes    # 32 null padded secret bytes
+
+
 def add_totp_account():
     # 1. Check for 'TOTP' magic bytes in the EEPROM
-    check_eeprom_format()
+    check_eeprom_format(eeprom)
 
     # 2. Prompt for slot number
     slot = get_slot_input()
 
     # 3. Check if the slot is already in use
-    if is_slot_in_use(slot):
+    if is_slot_in_use(eeprom, slot):
         if not confirm_overwrite(slot):
             return
 
@@ -174,7 +158,7 @@ def add_totp_account():
 
 def erase_totp_account():
     # 1. Check for 'TOTP' magic bytes in the EEPROM
-    check_eeprom_format()
+    check_eeprom_format(eeprom)
 
     # 2. Prompt for slot number
     slot = get_slot_input()
@@ -192,19 +176,16 @@ def erase_totp_account():
 
 def list_totp_accounts():
     # Check for 'TOTP' magic bytes in the EEPROM
-    check_eeprom_format()
+    check_eeprom_format(eeprom)
 
     # Iterate through each of the 15 possible slots
     for slot in range(1, 16):
-        in_use_marker = 4 + (slot - 1)
-        base = 32 + ((slot - 1) * 64)
-
-        # Check if the slot is in use by looking at the in-use marker
-        if is_slot_in_use(slot):
-            # Slot is in use, extract the label, removing null padding
-            label = eeprom[base:base+8].decode('utf-8').rstrip('\x00')
+        try:
+            # Load label and secret from EEPROM for the given slot
+            label, _ = load_totp_account(eeprom, slot)
             print(f"Slot {slot}: '{label}'")
-        else:
+        except ValueError:
+            # If the slot isn't in use, we get a ValueError
             print(f"Slot {slot}: -- empty --")
 
 
@@ -213,14 +194,14 @@ def copy_totp_account():
     src_slot = get_slot_input()
 
     # Check if the source slot is in use
-    if not is_slot_in_use(src_slot):
+    if not is_slot_in_use(eeprom, src_slot):
         raise ValueError(f"Source slot {src_slot} is not in use.")
 
     # Prompt for the destination slot number
     dest_slot = get_slot_input()
 
     # Check if the destination slot is in use
-    if is_slot_in_use(dest_slot):
+    if is_slot_in_use(eeprom, dest_slot):
         # Prompt to confirm overwriting the destination slot
         if not confirm_overwrite(dest_slot):
             return
