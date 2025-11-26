@@ -19,7 +19,7 @@
 def check_eeprom_format(eeprom):
     # Checks if the EEPROM is formatted with 'TOTP' magic bytes
     if eeprom[0:4] != b'TOTP':
-        raise ValueError("EEPROM not formatted. Run format_eeprom() first.")
+        raise ValueError("EEPROM not formatted. Try util.format_eeprom().")
 
 
 def is_slot_in_use(eeprom, slot):

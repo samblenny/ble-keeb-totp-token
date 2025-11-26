@@ -111,7 +111,7 @@ def get_prev_account_index():
 def get_selected_totp(unix_time):
     # Get TOTP slot, label, and code for the selected account
     if selected_account_index is None:
-        return ''
+        return ('', '', '')
     acct = accounts[selected_account_index]
     code = totp_sha1(acct.secret_b32, unix_time, digits=6, period=30)
     return (acct.slot, acct.label, code)
