@@ -10,6 +10,7 @@ import collections
 import digitalio
 import displayio
 from fourwire import FourWire
+import gc
 from micropython import const
 from pwmio import PWMOut
 import terminalio
@@ -21,6 +22,7 @@ from adafruit_display_text import label
 from adafruit_ds3231 import DS3231
 from adafruit_st7789 import ST7789
 
+from ble_keeb import BLEKeeb
 from eeprom_db import check_eeprom_format, is_slot_in_use, load_totp_account
 from sb_totp import base32_encode, totp_sha1
 
@@ -35,6 +37,7 @@ backlight = PWMOut(board.TFT_BACKLIGHT, frequency=500, duty_cycle=BACKLIGHT_ON)
 
 # Configure CLUE's 240x240 ST7789 TFT display with a 4x scaled text label
 displayio.release_displays()
+gc.collect()
 spi = busio.SPI(board.TFT_SCK, MOSI=board.TFT_MOSI)
 # print("spi frequency", spi.frequency) # default is 32MHz which works fine
 display_bus = FourWire(spi, command=board.TFT_DC, chip_select=board.TFT_CS,
@@ -103,19 +106,13 @@ def select_next_account():
         return
     selected_account_index = (selected_account_index + 1) % len(accounts)
 
-def select_prev_account():
-    # Decrement selected account index, modulo total number of accounts
-    global selected_account_index
-    if len(accounts) == 0:
-        return
-    selected_account_index = ((selected_account_index + len(accounts) - 1) %
-        len(accounts))
-
 def get_selected_totp(unix_time):
     # Get TOTP slot, label, and code for the selected account
     if selected_account_index is None:
         return ('', '', '')
     acct = accounts[selected_account_index]
+    # CAUTION! For boards that use adafruit_hashlib.hashlib for SHA1, this
+    # call may take on the order of 2 seconds to finish
     code = totp_sha1(acct.secret_b32, unix_time, digits=6, period=30)
     return (acct.slot, acct.label, code)
 
@@ -136,16 +133,24 @@ button_B.pull = digitalio.Pull.UP
 prev_a = button_A.value
 prev_b = button_B.value
 
+# Initialize BLE keyboard
+gc.collect()
+ble_keeb = BLEKeeb()
+gc.collect()
+
 
 # ---
 # Main Loop
 # ---
+
+# Variables to track when interesting values have changed
 t = rtc.datetime
 prev_t = t
 prev_prox = apds.proximity > PROX_THRESHOLD  # True means hand near sensor
 bl_enable = True
-need_refresh = True
+advertise = True
 slot, label, totp_code = get_selected_totp(time.mktime(t))
+
 while True:
 
     # Update display only when backlight is on
@@ -155,6 +160,12 @@ while True:
             totp_code)
         display.refresh()
         need_refresh = False
+        if advertise:
+            # Starting BLE advertising is slow, so we do this after the first
+            # screen update rather than before the main loop
+            ble_keeb.advertise()
+            advertise = False
+    gc.collect()
 
     # Wait until second rolls over
     while t.tm_sec == prev_t.tm_sec and not need_refresh:
@@ -165,17 +176,29 @@ while True:
 
             # Check Button A
             va = button_A.value
-            if (not va) and prev_a:
-                # Falling edge of button A press -> select next TOTP account
-                select_next_account()
-                need_refresh = True
+            if bl_enable and (not va) and prev_a:
+                # Falling edge of button A press -> send TOTP code
+                print("Button A pressed")
+                if ble_keeb.connected():
+                    print(f" Sending code on BLE")
+                    ble_keeb.send_code(totp_code + "\n")
+                else:
+                    print(" BLE not connected")
             prev_a = va
 
             # Check Button B
             vb = button_B.value
-            if (not vb) and prev_b:
-                # Falling edge of button B press -> select previous account
-                select_prev_account()
+            if bl_enable and (not vb) and prev_b:
+                # Falling edge of button B press -> select next account
+                print("Button B pressed")
+                select_next_account()
+                # Update slot and label now, clear code as it updates slowly
+                acct = accounts[selected_account_index]
+                textbox.text = '%s\n%s\n%s %s' % (date, time_str,
+                    acct.slot, acct.label)
+                display.refresh()
+                # Request new code (this may take a bit)
+                slot_changed = True
                 need_refresh = True
             prev_b = vb
 
@@ -184,11 +207,17 @@ while True:
             if prox_event != prev_prox:
                 prev_prox = prox_event
                 if prox_event:
-                    # Toggle backlight on leading edge of proximity event
+
+                    # Leading edge of proximity event -> update backlight, etc
                     bl_enable = not bl_enable
                     dc = BACKLIGHT_ON if bl_enable else BACKLIGHT_OFF
                     backlight.duty_cycle = dc
-                    if not bl_enable:
+                    if bl_enable:
+                        # Just turned backlight on, so poke BLE radio
+                        if not ble_keeb.connected():
+                            ble_keeb.advertise()
+                    else:
+                        # Clear display when we've turned the backlight off
                         textbox.text = ''
                         display.refresh()
 
@@ -207,3 +236,4 @@ while True:
         # Generate new totp code at multiples of 30 seconds
         unix_time = time.mktime(rtc.datetime)
         slot, label, totp_code = get_selected_totp(unix_time)
+        code_changed = True
