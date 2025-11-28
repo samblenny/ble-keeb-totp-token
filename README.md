@@ -4,35 +4,40 @@
 
 **DRAFT: WORK IN PROGRESS**
 
-This is a two factor authentication token to generate TOTP login codes for
-accounts that need them. The token is meant for a threat model where you don't
-care about physical tampering but you do want to prevent secrets from leaking
-over the network due to mis-configured cloud-sync backup features or whatever.
+This is a two factor authentication token to generate TOTP login codes with an
+optional BLE HID keyboard code typing feature. The design is for desktop use in
+a safe location (wall power + no worries of physical tampering) but where you
+do want to prevent secrets from leaking over the network due to mis-configured
+cloud-sync backup features or whatever.
 
 Design Goals and Features:
 
 1. Make the codes really easy to read and type, even in low light, by using a
-   dimmable backlit TFT display and optional BLE HID keyboard.
+   dimmable backlit TFT display and optional BLE HID keyboard output.
 
 2. Support 15 TOTP account slots (chosen because you can use key chording to
    enter binary for 1 to 15 on a 4-key NeoKey keypad).
 
-3. Store secrets in an I2C EEPROM rather than in the CLUE board's flash. This
+3. Wave your hand past the CLUE's proximity sensor to toggle standby mode.
+   At power up, backlight is on. Wave to turn the backlight off. Wave again to
+   turn the backlight on.
+
+4. Store secrets in an I2C EEPROM rather than in the CLUE board's flash. This
    makes it so the secrets aren't trivially accessible to a connected computer
    as USB mass storage files. This way, they won't get accidentally sucked into
    backups, and malware would have to work harder to access them.
 
-4. Set DS3231 RTC time from the USB serial console by opening the REPL,
+5. Set DS3231 RTC time from the USB serial console by opening the REPL,
    importing the `util` module, then calling `util.set_time()`.
 
-5. Add and manage TOTP accounts in the EEPROM's database of account slots by
-   using similar REPL functions (see `import util` then `util.menu()`).
+6. Add and manage TOTP accounts in the EEPROM's database of account slots by
+   using similar REPL functions (`import util` then `util.menu()`).
 
-6. Use the token after initial setup by powering it from a phone charger,
+7. Use the token after initial setup by powering it from a phone charger,
    reading codes off the TFT display, or having the token type codes over BLE
    HID when you press the key chord for an account slot.
 
-7. Allow a fully airgapped mode with a settings.toml option to turn off the BLE
+8. Allow a fully airgapped mode with a settings.toml option to turn off the BLE
    keyboard feature.
 
 
