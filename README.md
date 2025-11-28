@@ -20,7 +20,7 @@ Design Goals and Features:
 3. Store secrets in an I2C EEPROM rather than in the CLUE board's flash. This
    makes it so the secrets aren't trivially accessible to a connected computer
    as USB mass storage files. This way, they won't get accidentally sucked into
-   backups, and malware would have to work harder to get access them.
+   backups, and malware would have to work harder to access them.
 
 4. Set DS3231 RTC time from the USB serial console by opening the REPL,
    importing the `util` module, then calling `util.set_time()`.
