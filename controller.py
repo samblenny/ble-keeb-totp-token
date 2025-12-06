@@ -117,17 +117,17 @@ class Controller:
         try:
             eeprom = self.eeprom
             check_eeprom_format(eeprom)
-            first_used_slot = None
+            first_used_index = None
             for slot in range(1, 5):
                 if is_slot_in_use(eeprom, slot):
                     label, secret_bytes = load_totp_account(eeprom, slot)
                     secret_b32 = base32_encode(secret_bytes)
                     self.accounts.append(TOTPAccount(slot, label, secret_b32))
-                    if first_used_slot is None:
-                        first_used_slot = slot
+                    if first_used_index is None:
+                        first_used_index = slot-1
                 else:
                     self.accounts.append(None)
-            self.selected_acct = first_used_slot
+            self.selected_acct = first_used_index
         except ValueError as e:
             print(e)
 
