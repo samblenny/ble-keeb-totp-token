@@ -2,6 +2,8 @@
 <!-- SPDX-FileCopyrightText: Copyright 2025 Sam Blenny -->
 # NeoKey TOTP Token
 
+![neokey-totp-token-demo.jpeg](neokey-totp-token-demo.jpeg)
+
 This is a two factor authentication token to generate TOTP login codes for up
 to four accounts. You can select which account by pressing a key on the 4-key
 NeoKey keypad. The design is intended for desktop use in a safe location (wall
@@ -128,7 +130,8 @@ then call `util.menu()` to see what's available. The first time, you will need
 to format the EEPROM. After that, you can add, erase, or copy accounts as you
 like. There are 4 available slots (one for each key of a 4-key NeoKey keypad).
 
-This is an example of how it might look to use the menu:
+This is an example of how it looks to use the menu and provision two demo
+accounts (I used a USB 2D barcode reader to type the otpauth URIs):
 
 ```
 >>> import util
@@ -143,10 +146,27 @@ Available functions:
  6. list_totp_accounts()  - List all stored TOTP accounts.
  7. set_time()            - Set the DS3231 RTC time.
 
-Choose a function by number (or Enter to cancel): 6
-Slot 1: 'adafruit'
-Slot 2: 'gmail'
-Slot 3: 'discord'
+Choose a function by number (or Enter to cancel): 4
+Are you sure? This will erase all data. (y/n): y
+Writing header page...
+Zeroing 127 pages:
+................................................................
+...............................................................
+EEPROM formatted successfully.
+>>> util.add_totp_account()
+Enter slot number (1-4): 1
+Enter label (max 8 chars): Alice
+Enter TOTP URI: otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example
+Record added to slot 1.
+>>> util.add_totp_account()
+Enter slot number (1-4): 2
+Enter label (max 8 chars): JohnDoe
+Enter TOTP URI: otpauth://totp/ACME%20Co:john.doe@email.com?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&issuer=ACME%20Co&algorithm=SHA1&digits=6&period=30
+Record added to slot 2.
+>>> util.list_totp_accounts()
+Slot 1: 'Alice'
+Slot 2: 'JohnDoe'
+Slot 3: -- empty --
 Slot 4: -- empty --
 >>>
 ```
